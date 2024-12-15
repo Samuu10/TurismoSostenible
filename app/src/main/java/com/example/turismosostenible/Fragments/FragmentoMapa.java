@@ -1,5 +1,6 @@
 package com.example.turismosostenible.Fragments;
 
+import android.app.AlertDialog;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.BitmapDrawable;
@@ -9,6 +10,8 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.TextView;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
@@ -120,40 +123,50 @@ public class FragmentoMapa extends Fragment {
                     List<PointOfInterest> pois = response.body();
                     Log.d(TAG, "POIs received: " + pois.size());
                     for (PointOfInterest poi : pois) {
+                        if (poi == null) {
+                            Log.e(TAG, "POI is null");
+                            continue;
+                        }
+
                         Marker poiMarker = new Marker(mapView);
                         GeoPoint poiLocation = new GeoPoint(poi.getLat(), poi.getLon());
                         poiMarker.setPosition(poiLocation);
                         poiMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
-                        poiMarker.setTitle(poi.getName());
 
-                        // Variable para almacenar el icono según el tipo de POI
+                        String poiName = poi.getName();
+                        if (poiName == null || poiName.isEmpty()) {
+                            poiName = "Establecimiento sin nombre";
+                        }
+                        poiMarker.setTitle(poiName);
+
                         Drawable poiIcon = null;
-
-                        // Establecemos el ícono según el tipo de POI
                         switch (query) {
                             case "restaurant":
-                                poiIcon = getResources().getDrawable(R.drawable.ic_restaurant, null); // Ícono restaurante
+                                poiIcon = getResources().getDrawable(R.drawable.ic_restaurant, null);
                                 break;
                             case "bar":
-                                poiIcon = getResources().getDrawable(R.drawable.ic_bar, null); // Ícono bar
+                                poiIcon = getResources().getDrawable(R.drawable.ic_bar, null);
                                 break;
                             case "hotel":
-                                poiIcon = getResources().getDrawable(R.drawable.ic_hotel, null); // Ícono hotel
+                                poiIcon = getResources().getDrawable(R.drawable.ic_hotel, null);
                                 break;
                             case "museum":
-                                poiIcon = getResources().getDrawable(R.drawable.ic_museum, null); // Ícono museo
+                                poiIcon = getResources().getDrawable(R.drawable.ic_museum, null);
                                 break;
                         }
 
                         if (poiIcon != null) {
-                            Bitmap resizedIcon = resizeIcon(poiIcon, 50, 50); // Redimensionamos el ícono
-                            poiMarker.setIcon(new BitmapDrawable(getResources(), resizedIcon)); // Establecer el ícono redimensionado
+                            Bitmap resizedIcon = resizeIcon(poiIcon, 50, 50);
+                            poiMarker.setIcon(new BitmapDrawable(getResources(), resizedIcon));
                         } else {
-                            // Si no se especifica un icono, se usará el marcador predeterminado de OSM (sin icono personalizado)
-                            poiMarker.setIcon(null);  // No es necesario hacer nada si usas el icono predeterminado
+                            poiMarker.setIcon(null);
                         }
 
-                        poiMarker.setSubDescription(poi.getName());
+                        poiMarker.setSubDescription(poiName);
+                        poiMarker.setOnMarkerClickListener((marker, mapView) -> {
+                            fetchPoiDetails(poi.getLat(), poi.getLon());
+                            return true;
+                        });
                         mapView.getOverlays().add(poiMarker);
                     }
                     mapView.invalidate();
@@ -170,6 +183,43 @@ public class FragmentoMapa extends Fragment {
         });
     }
 
+    private void fetchPoiDetails(double lat, double lon) {
+        Call<PointOfInterest> call = apiService.getReverseGeocoding(lat, lon, "json");
+        call.enqueue(new Callback<PointOfInterest>() {
+            @Override
+            public void onResponse(Call<PointOfInterest> call, Response<PointOfInterest> response) {
+                if (response.isSuccessful() && response.body() != null) {
+                    PointOfInterest poi = response.body();
+                    showPoiDetailsDialog(poi);
+                } else {
+                    Log.e(TAG, "Reverse Geocoding API Response Error: " + response.message());
+                    Log.e(TAG, "Response Code: " + response.code());
+                }
+            }
+
+            @Override
+            public void onFailure(Call<PointOfInterest> call, Throwable t) {
+                Log.e(TAG, "Reverse Geocoding API call error: ", t);
+            }
+        });
+    }
+
+    private void showPoiDetailsDialog(PointOfInterest poi) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
+        LayoutInflater inflater = getLayoutInflater();
+        View dialogView = inflater.inflate(R.layout.dialog_poi_details, null);
+
+        TextView tvPoiName = dialogView.findViewById(R.id.tv_poi_name);
+        TextView tvPoiCity = dialogView.findViewById(R.id.tv_poi_city);
+
+        tvPoiName.setText(poi.getName() != null ? poi.getName() : "Establecimiento sin nombre");
+        tvPoiCity.setText(poi.getCity() != null ? poi.getCity() : "Ciudad desconocida");
+
+        builder.setView(dialogView)
+                .setTitle("Detalles del Punto de Interés")
+                .setPositiveButton("OK", null)
+                .show();
+    }
 
     @Override
     public void onResume() {

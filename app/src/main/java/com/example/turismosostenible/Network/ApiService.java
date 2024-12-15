@@ -15,4 +15,11 @@ public interface ApiService {
             @Query("radius") int radius,
             @Query("limit") int limit
     );
+
+    @GET("reverse")
+    Call<PointOfInterest> getReverseGeocoding(
+            @Query("lat") double lat,
+            @Query("lon") double lon,
+            @Query("format") String format
+    );
 }
