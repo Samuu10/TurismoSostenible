@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "618518165675",
+    "project_id": "sample-firebase-ai-app-d9b5c",
+    "storage_bucket": "sample-firebase-ai-app-d9b5c.appspot.com",
+    "firebase_url": "https://sample-firebase-ai-app-d9b5c-default-rtdb.firebaseio.com/"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:618518165675:android:ab474cb1c668bc2e8edfee",
+        "android_client_info": {
+          "package_name": "com.example.turismosostenible"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDwPXP_DFBsU-jhI03GyRL7Jm7E9gsmPJ0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
