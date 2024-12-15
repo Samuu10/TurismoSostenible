@@ -1,9 +1,10 @@
 package com.example.turismosostenible.Activities;
 
-import android.content.pm.PackageManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.widget.SearchView;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -12,39 +13,49 @@ import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentTransaction;
 import com.example.turismosostenible.Fragments.FragmentoMapa;
+import com.example.turismosostenible.Network.PointOfInterest;
+import com.example.turismosostenible.Network.ApiService;
+import com.example.turismosostenible.Network.RetrofitClient;
 import com.example.turismosostenible.R;
 
-//Actividad principal de la aplicacion en la que se muestra el mapa y se pueden realizar busquedas
+import java.util.List;
+
+import retrofit2.Call;
+import retrofit2.Response;
+
 public class ActividadPrincipal extends AppCompatActivity {
 
-    //Variables
-    private SearchView searchView;
+    private EditText searchEditText;
+    private Button searchButton;
+    private FragmentoMapa fragmentoMapa;
+    private ApiService apiService;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.actividad_principal);
 
-        //Establecemos el SearchView
-        searchView = findViewById(R.id.search_view);
-        searchView.setQueryHint("Buscar...");
-        searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
-            @Override
-            public boolean onQueryTextSubmit(String query) {
-                return false;
-            }
+        apiService = RetrofitClient.getClient().create(ApiService.class);
 
+        searchEditText = findViewById(R.id.search_edit_text);
+        searchButton = findViewById(R.id.search_button);
+
+        searchButton.setOnClickListener(new View.OnClickListener() {
             @Override
-            public boolean onQueryTextChange(String newText) {
-                new SearchTask().execute(newText);
-                return true;
+            public void onClick(View v) {
+                String query = searchEditText.getText().toString();
+                if (!query.isEmpty()) {
+                    new SearchTask().execute(query);
+                } else {
+                    Toast.makeText(ActividadPrincipal.this, "Por favor, ingrese un término de búsqueda", Toast.LENGTH_SHORT).show();
+                }
             }
         });
 
-        loadFragment(new FragmentoMapa());
+        fragmentoMapa = new FragmentoMapa();
+        loadFragment(fragmentoMapa);
     }
 
-    //Metodo para cargar un fragmento en el contenedor de fragmentos
     private void loadFragment(Fragment fragment) {
         FragmentManager fragmentManager = getSupportFragmentManager();
         FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
@@ -52,49 +63,30 @@ public class ActividadPrincipal extends AppCompatActivity {
         fragmentTransaction.commit();
     }
 
-    //Metodo para gestionar la respuesta de los permisos de ubicación
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == 1) {
-            new HandlePermissionsTask().execute(grantResults);
-        }
-    }
-
-    //Clase interna para manejar los permisos en segundo plano
-    private class HandlePermissionsTask extends AsyncTask<int[], Void, Boolean> {
+    private class SearchTask extends AsyncTask<String, Void, List<PointOfInterest>> {
         @Override
-        protected Boolean doInBackground(int[]... grantResults) {
-            return grantResults.length > 0 && grantResults[0][0] == PackageManager.PERMISSION_GRANTED;
-        }
-
-        @Override
-        protected void onPostExecute(Boolean permissionGranted) {
-            if (permissionGranted) {
-                //Si se conceden los permisos, se carga el fragmento del mapa
-                loadFragment(new FragmentoMapa());
-            } else {
-                //Si no se conceden los permisos, se muestra un mensaje de error
-                Toast.makeText(ActividadPrincipal.this, "Location permission is required to show the map", Toast.LENGTH_SHORT).show();
+        protected List<PointOfInterest> doInBackground(String... params) {
+            String query = params[0];
+            Call<List<PointOfInterest>> call = apiService.getNearbyPois(query, "json", 40.448031, -3.796295, 1000, 20);
+            try {
+                Response<List<PointOfInterest>> response = call.execute();
+                if (response.isSuccessful() && response.body() != null) {
+                    return response.body();
+                } else {
+                    return null;
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                return null;
             }
         }
-    }
-
-    //Clase interna para buscar establecimientos en segundo plano
-    private class SearchTask extends AsyncTask<String, Void, Boolean> {
-        @Override
-        protected Boolean doInBackground(String... params) {
-            String newText = params[0];
-            // Aquí puedes agregar la lógica de búsqueda en segundo plano
-            // Por ejemplo, filtrar una lista de elementos
-            return newText != null && !newText.isEmpty();
-        }
 
         @Override
-        protected void onPostExecute(Boolean result) {
-            if (result) {
-                // Actualiza la UI con los resultados de la búsqueda
-                Toast.makeText(ActividadPrincipal.this, "Search text changed", Toast.LENGTH_SHORT).show();
+        protected void onPostExecute(List<PointOfInterest> result) {
+            if (result != null && !result.isEmpty()) {
+                fragmentoMapa.addSearchResultsToMap(result);
+            } else {
+                Toast.makeText(ActividadPrincipal.this, "No se encontraron resultados", Toast.LENGTH_SHORT).show();
             }
         }
     }

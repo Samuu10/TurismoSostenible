@@ -278,4 +278,38 @@ public class FragmentoMapa extends Fragment {
             mapView.onDetach();
         }
     }
+
+    public void addSearchResultsToMap(List<PointOfInterest> pois) {
+        if (mapView == null) {
+            Log.e(TAG, "MapView is null");
+            return;
+        }
+
+        for (PointOfInterest poi : pois) {
+            if (poi == null) {
+                Log.e(TAG, "POI is null");
+                continue;
+            }
+
+            Marker poiMarker = new Marker(mapView);
+            GeoPoint poiLocation = new GeoPoint(poi.getLat(), poi.getLon());
+            poiMarker.setPosition(poiLocation);
+            poiMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
+
+            String poiName = poi.getName();
+            if (poiName == null || poiName.isEmpty()) {
+                poiName = poi.getType() != null ? poi.getType() : "Establecimiento sin nombre";
+            }
+            poiMarker.setTitle(poiName);
+
+            poiMarker.setOnMarkerClickListener((marker, mapView) -> {
+                showPoiDetailsDialog(poi);
+                return true;
+            });
+
+            mapView.getOverlays().add(poiMarker);
+        }
+
+        mapView.invalidate(); // Refresh the map
+    }
 }
