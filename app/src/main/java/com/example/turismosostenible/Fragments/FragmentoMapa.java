@@ -1,9 +1,8 @@
 package com.example.turismosostenible.Fragments;
 
-import android.Manifest;
-import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.util.Log;
@@ -12,12 +11,10 @@ import android.view.View;
 import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.app.ActivityCompat;
 import androidx.fragment.app.Fragment;
 import com.example.turismosostenible.Network.PointOfInterest;
 import com.example.turismosostenible.Network.ApiService;
 import com.example.turismosostenible.Network.RetrofitClient;
-import com.example.turismosostenible.Network.PoiResponse;
 import com.example.turismosostenible.R;
 import org.osmdroid.api.IMapController;
 import org.osmdroid.config.Configuration;
@@ -26,10 +23,10 @@ import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
 import org.osmdroid.views.overlay.Marker;
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay;
-import java.util.List;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
+import java.util.List;
 
 public class FragmentoMapa extends Fragment {
 
@@ -37,6 +34,7 @@ public class FragmentoMapa extends Fragment {
     private MapView mapView;
     private MyLocationNewOverlay locationOverlay;
     private ApiService apiService;
+    private GeoPoint customLocation;
 
     @Nullable
     @Override
@@ -46,14 +44,15 @@ public class FragmentoMapa extends Fragment {
         // Configuramos el contexto de la librería osmdroid
         Configuration.getInstance().setUserAgentValue(requireContext().getPackageName());
 
+        // Inicializamos el servicio de Retrofit antes de configurarlo
+        apiService = RetrofitClient.getClient().create(ApiService.class);
+
         mapView = view.findViewById(R.id.map);
         if (mapView != null) {
-            configureMap();
+            configureMap(); // Configuramos el mapa después de inicializar apiService
         } else {
             Log.e(TAG, "MapView is null");
         }
-
-        apiService = RetrofitClient.getClient().create(ApiService.class);
 
         return view;
     }
@@ -63,48 +62,114 @@ public class FragmentoMapa extends Fragment {
         mapView.setTileSource(TileSourceFactory.MAPNIK);
         mapView.setMultiTouchControls(true);
 
-        // Añadimos la capa de ubicación
-        locationOverlay = new MyLocationNewOverlay(mapView);
-        locationOverlay.enableMyLocation();
-        locationOverlay.enableFollowLocation();
+        // Usamos las coordenadas de la Universidad Alfonso X el Sabio
+        double customLat = 40.448031;  // Latitud: Villanueva de la Cañada, Universidad Alfonso X el Sabio
+        double customLon = -3.796295;  // Longitud
 
-        // Convert Drawable to Bitmap and set as person icon
-        Drawable drawable = getResources().getDrawable(R.drawable.custom_location_arrow, null);
-        if (drawable != null) {
-            locationOverlay.setPersonIcon(drawableToBitmap(drawable));
-            Log.d(TAG, "Custom location arrow set successfully.");
-        } else {
-            Log.e(TAG, "Custom location arrow drawable is null");
+        // Asignar las coordenadas a customLocation
+        customLocation = new GeoPoint(customLat, customLon);
+
+        if (customLocation == null) {
+            Log.e(TAG, "Custom location is null!");
+            return; // Evita continuar si no está bien inicializado
         }
 
-        mapView.getOverlays().add(locationOverlay);
-
-        // Centramos el mapa en la ubicación actual del usuario
         IMapController mapController = mapView.getController();
         mapController.setZoom(5.0);
+        mapController.setCenter(customLocation);
 
-        if (ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            locationOverlay.runOnFirstFix(() -> {
-                GeoPoint location = locationOverlay.getMyLocation();
-                if (location != null) {
-                    Log.d(TAG, "Location obtained: " + location.getLatitude() + ", " + location.getLongitude());
-                    fetchNearbyPois(location.getLatitude(), location.getLongitude(), "restaurant");
-                } else {
-                    Log.e(TAG, "Location is null");
-                }
-            });
-        } else {
-            Log.e(TAG, "Location permission not granted");
-        }
+        // Crear un marcador para la ubicación personalizada
+        Marker customMarker = new Marker(mapView);
+        customMarker.setPosition(customLocation);
+        customMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
+        customMarker.setTitle("Tu ubicación actual");
+        customMarker.setIcon(getResources().getDrawable(R.drawable.custom_location_arrow, null)); // Ícono rojo
+
+        mapView.getOverlays().add(customMarker); // Añadir el marcador al mapa
+        mapView.invalidate(); // Refrescar el mapa
+
+        // Activar búsqueda de POIs cercanos usando la ubicación actual
+        fetchNearbyPois(customLat, customLon, "restaurant");
+        fetchNearbyPois(customLat, customLon, "bar");
+        fetchNearbyPois(customLat, customLon, "hotel");
+        fetchNearbyPois(customLat, customLon, "museum");
     }
 
-    private Bitmap drawableToBitmap(Drawable drawable) {
-        Bitmap bitmap = Bitmap.createBitmap(drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
+    // Función para redimensionar un ícono (Bitmap)
+    private Bitmap resizeIcon(Drawable drawable, int width, int height) {
+        // Convierte Drawable a Bitmap
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
         drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
         drawable.draw(canvas);
         return bitmap;
     }
+
+    // Función para establecer los íconos de los POIs con el tamaño ajustado
+    private void fetchNearbyPois(double lat, double lon, String query) {
+        if (apiService == null) {
+            Log.e(TAG, "ApiService is not initialized!");
+            return;
+        }
+
+        Call<List<PointOfInterest>> call = apiService.getNearbyPois(query, "json", lat, lon, 1000, 20);
+        call.enqueue(new Callback<List<PointOfInterest>>() {
+            @Override
+            public void onResponse(Call<List<PointOfInterest>> call, Response<List<PointOfInterest>> response) {
+                if (response.isSuccessful() && response.body() != null) {
+                    List<PointOfInterest> pois = response.body();
+                    Log.d(TAG, "POIs received: " + pois.size());
+                    for (PointOfInterest poi : pois) {
+                        Marker poiMarker = new Marker(mapView);
+                        GeoPoint poiLocation = new GeoPoint(poi.getLat(), poi.getLon());
+                        poiMarker.setPosition(poiLocation);
+                        poiMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
+                        poiMarker.setTitle(poi.getName());
+
+                        // Variable para almacenar el icono según el tipo de POI
+                        Drawable poiIcon = null;
+
+                        // Establecemos el ícono según el tipo de POI
+                        switch (query) {
+                            case "restaurant":
+                                poiIcon = getResources().getDrawable(R.drawable.ic_restaurant, null); // Ícono restaurante
+                                break;
+                            case "bar":
+                                poiIcon = getResources().getDrawable(R.drawable.ic_bar, null); // Ícono bar
+                                break;
+                            case "hotel":
+                                poiIcon = getResources().getDrawable(R.drawable.ic_hotel, null); // Ícono hotel
+                                break;
+                            case "museum":
+                                poiIcon = getResources().getDrawable(R.drawable.ic_museum, null); // Ícono museo
+                                break;
+                        }
+
+                        if (poiIcon != null) {
+                            Bitmap resizedIcon = resizeIcon(poiIcon, 50, 50); // Redimensionamos el ícono
+                            poiMarker.setIcon(new BitmapDrawable(getResources(), resizedIcon)); // Establecer el ícono redimensionado
+                        } else {
+                            // Si no se especifica un icono, se usará el marcador predeterminado de OSM (sin icono personalizado)
+                            poiMarker.setIcon(null);  // No es necesario hacer nada si usas el icono predeterminado
+                        }
+
+                        poiMarker.setSubDescription(poi.getName());
+                        mapView.getOverlays().add(poiMarker);
+                    }
+                    mapView.invalidate();
+                } else {
+                    Log.e(TAG, "API Response Error: " + response.message());
+                    Log.e(TAG, "Response Code: " + response.code());
+                }
+            }
+
+            @Override
+            public void onFailure(Call<List<PointOfInterest>> call, Throwable t) {
+                Log.e(TAG, "API call error: ", t);
+            }
+        });
+    }
+
 
     @Override
     public void onResume() {
@@ -129,36 +194,4 @@ public class FragmentoMapa extends Fragment {
             mapView.onDetach();
         }
     }
-
-    private void fetchNearbyPois(double lat, double lon, String query) {
-        Call<List<PointOfInterest>> call = apiService.getNearbyPois(query, "json", lat, lon, 10000, 10);
-        call.enqueue(new Callback<List<PointOfInterest>>() {
-            @Override
-            public void onResponse(Call<List<PointOfInterest>> call, Response<List<PointOfInterest>> response) {
-                if (response.isSuccessful() && response.body() != null) {
-                    List<PointOfInterest> pois = response.body();
-                    Log.d(TAG, "POIs received: " + pois.size());
-                    for (PointOfInterest poi : pois) {
-                        Log.d(TAG, "POI: " + poi.getName() + ", " + poi.getLat() + ", " + poi.getLon());
-                        Marker poiMarker = new Marker(mapView);
-                        poiMarker.setPosition(new GeoPoint(poi.getLat(), poi.getLon()));
-                        poiMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
-                        poiMarker.setTitle(poi.getName());
-                        mapView.getOverlays().add(poiMarker);
-                    }
-                    mapView.invalidate();
-                } else {
-                    Log.e(TAG, "API Response Error: " + response.message());
-                    Log.e(TAG, "Response Code: " + response.code());
-                    Log.e(TAG, "Response Body: " + response.errorBody().toString());
-                }
-            }
-
-            @Override
-            public void onFailure(Call<List<PointOfInterest>> call, Throwable t) {
-                Log.e(TAG, "API call error: ", t);
-            }
-        });
-    }
-
 }
