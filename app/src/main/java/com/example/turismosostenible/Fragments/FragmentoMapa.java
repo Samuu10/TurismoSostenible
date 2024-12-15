@@ -5,13 +5,13 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
-
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
@@ -27,7 +27,6 @@ import org.osmdroid.views.MapView;
 import org.osmdroid.views.overlay.Marker;
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay;
 import retrofit2.Call;
-import retrofit2.Callback;
 import retrofit2.Response;
 import java.util.List;
 
@@ -78,7 +77,7 @@ public class FragmentoMapa extends Fragment {
         }
 
         IMapController mapController = mapView.getController();
-        mapController.setZoom(5.0);
+        mapController.setZoom(6.0);
         mapController.setCenter(customLocation);
 
         // Crear un marcador para la ubicación personalizada
@@ -92,10 +91,10 @@ public class FragmentoMapa extends Fragment {
         mapView.invalidate(); // Refrescar el mapa
 
         // Activar búsqueda de POIs cercanos usando la ubicación actual
-        fetchNearbyPois(customLat, customLon, "restaurant");
-        fetchNearbyPois(customLat, customLon, "bar");
-        fetchNearbyPois(customLat, customLon, "hotel");
-        fetchNearbyPois(customLat, customLon, "museum");
+        new FetchNearbyPoisTask(customLat, customLon).execute("restaurant");
+        new FetchNearbyPoisTask(customLat, customLon).execute("bar");
+        new FetchNearbyPoisTask(customLat, customLon).execute("hotel");
+        new FetchNearbyPoisTask(customLat, customLon).execute("museum");
     }
 
     // Función para redimensionar un ícono (Bitmap)
@@ -108,103 +107,125 @@ public class FragmentoMapa extends Fragment {
         return bitmap;
     }
 
-    // Función para establecer los íconos de los POIs con el tamaño ajustado
-    private void fetchNearbyPois(double lat, double lon, String query) {
-        if (apiService == null) {
-            Log.e(TAG, "ApiService is not initialized!");
-            return;
+    // Clase interna para buscar POIs cercanos en segundo plano
+    private class FetchNearbyPoisTask extends AsyncTask<String, Void, List<PointOfInterest>> {
+        private double lat;
+        private double lon;
+        private String query;
+
+        public FetchNearbyPoisTask(double lat, double lon) {
+            this.lat = lat;
+            this.lon = lon;
         }
 
-        Call<List<PointOfInterest>> call = apiService.getNearbyPois(query, "json", lat, lon, 1000, 20);
-        call.enqueue(new Callback<List<PointOfInterest>>() {
-            @Override
-            public void onResponse(Call<List<PointOfInterest>> call, Response<List<PointOfInterest>> response) {
+        @Override
+        protected List<PointOfInterest> doInBackground(String... queries) {
+            query = queries[0];
+            Call<List<PointOfInterest>> call = apiService.getNearbyPois(query, "json", lat, lon, 1000, 20);
+            try {
+                Response<List<PointOfInterest>> response = call.execute();
                 if (response.isSuccessful() && response.body() != null) {
-                    List<PointOfInterest> pois = response.body();
-                    Log.d(TAG, "POIs received: " + pois.size());
-                    for (PointOfInterest poi : pois) {
-                        if (poi == null) {
-                            Log.e(TAG, "POI is null");
-                            continue;
-                        }
-
-                        Marker poiMarker = new Marker(mapView);
-                        GeoPoint poiLocation = new GeoPoint(poi.getLat(), poi.getLon());
-                        poiMarker.setPosition(poiLocation);
-                        poiMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
-
-                        String poiName = poi.getName();
-                        if (poiName == null || poiName.isEmpty()) {
-                            poiName = "Establecimiento sin nombre";
-                        }
-                        poiMarker.setTitle(poiName);
-
-                        Drawable poiIcon = null;
-                        switch (query) {
-                            case "restaurant":
-                                poiIcon = getResources().getDrawable(R.drawable.ic_restaurant, null);
-                                break;
-                            case "bar":
-                                poiIcon = getResources().getDrawable(R.drawable.ic_bar, null);
-                                break;
-                            case "hotel":
-                                poiIcon = getResources().getDrawable(R.drawable.ic_hotel, null);
-                                break;
-                            case "museum":
-                                poiIcon = getResources().getDrawable(R.drawable.ic_museum, null);
-                                break;
-                        }
-
-                        if (poiIcon != null) {
-                            Bitmap resizedIcon = resizeIcon(poiIcon, 50, 50);
-                            poiMarker.setIcon(new BitmapDrawable(getResources(), resizedIcon));
-                        } else {
-                            poiMarker.setIcon(null);
-                        }
-
-                        poiMarker.setSubDescription(poiName);
-                        poiMarker.setOnMarkerClickListener((marker, mapView) -> {
-                            fetchPoiDetails(poi.getLat(), poi.getLon());
-                            return true;
-                        });
-                        mapView.getOverlays().add(poiMarker);
-                    }
-                    mapView.invalidate();
+                    return response.body();
                 } else {
                     Log.e(TAG, "API Response Error: " + response.message());
-                    Log.e(TAG, "Response Code: " + response.code());
+                    return null;
                 }
+            } catch (Exception e) {
+                Log.e(TAG, "API call error: ", e);
+                return null;
             }
+        }
 
-            @Override
-            public void onFailure(Call<List<PointOfInterest>> call, Throwable t) {
-                Log.e(TAG, "API call error: ", t);
+        @Override
+        protected void onPostExecute(List<PointOfInterest> pois) {
+            if (pois != null) {
+                for (PointOfInterest poi : pois) {
+                    if (poi == null) {
+                        Log.e(TAG, "POI is null");
+                        continue;
+                    }
+
+                    Marker poiMarker = new Marker(mapView);
+                    GeoPoint poiLocation = new GeoPoint(poi.getLat(), poi.getLon());
+                    poiMarker.setPosition(poiLocation);
+                    poiMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
+
+                    String poiName = poi.getName();
+                    if (poiName == null || poiName.isEmpty()) {
+                        poiName = poi.getType() != null ? poi.getType() : "Establecimiento sin nombre";
+                    }
+                    poiMarker.setTitle(poiName);
+
+                    Drawable poiIcon = null;
+                    switch (query) {
+                        case "restaurant":
+                            poiIcon = getResources().getDrawable(R.drawable.ic_restaurant, null);
+                            break;
+                        case "bar":
+                            poiIcon = getResources().getDrawable(R.drawable.ic_bar, null);
+                            break;
+                        case "hotel":
+                            poiIcon = getResources().getDrawable(R.drawable.ic_hotel, null);
+                            break;
+                        case "museum":
+                            poiIcon = getResources().getDrawable(R.drawable.ic_museum, null);
+                            break;
+                    }
+
+                    if (poiIcon != null) {
+                        Bitmap resizedIcon = resizeIcon(poiIcon, 50, 50);
+                        poiMarker.setIcon(new BitmapDrawable(getResources(), resizedIcon));
+                    } else {
+                        poiMarker.setIcon(null);
+                    }
+
+                    poiMarker.setSubDescription(poiName);
+                    poiMarker.setOnMarkerClickListener((marker, mapView) -> {
+                        new FetchPoiDetailsTask().execute(poi.getLat(), poi.getLon());
+                        return true;
+                    });
+                    mapView.getOverlays().add(poiMarker);
+                }
+                mapView.invalidate();
             }
-        });
+        }
     }
 
-    private void fetchPoiDetails(double lat, double lon) {
-        Call<PointOfInterest> call = apiService.getReverseGeocoding(lat, lon, "json");
-        call.enqueue(new Callback<PointOfInterest>() {
-            @Override
-            public void onResponse(Call<PointOfInterest> call, Response<PointOfInterest> response) {
+    // Clase interna para obtener detalles del POI en segundo plano
+    private class FetchPoiDetailsTask extends AsyncTask<Double, Void, PointOfInterest> {
+        @Override
+        protected PointOfInterest doInBackground(Double... coords) {
+            double lat = coords[0];
+            double lon = coords[1];
+            Call<PointOfInterest> call = apiService.getReverseGeocoding(lat, lon, "json");
+            try {
+                Response<PointOfInterest> response = call.execute();
                 if (response.isSuccessful() && response.body() != null) {
-                    PointOfInterest poi = response.body();
-                    showPoiDetailsDialog(poi);
+                    return response.body();
                 } else {
                     Log.e(TAG, "Reverse Geocoding API Response Error: " + response.message());
-                    Log.e(TAG, "Response Code: " + response.code());
+                    return null;
                 }
+            } catch (Exception e) {
+                Log.e(TAG, "Reverse Geocoding API call error: ", e);
+                return null;
             }
+        }
 
-            @Override
-            public void onFailure(Call<PointOfInterest> call, Throwable t) {
-                Log.e(TAG, "Reverse Geocoding API call error: ", t);
+        @Override
+        protected void onPostExecute(PointOfInterest poi) {
+            if (poi != null) {
+                showPoiDetailsDialog(poi);
             }
-        });
+        }
     }
 
     private void showPoiDetailsDialog(PointOfInterest poi) {
+        if (poi == null) {
+            Log.e(TAG, "POI is null");
+            return;
+        }
+
         AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
         LayoutInflater inflater = getLayoutInflater();
         View dialogView = inflater.inflate(R.layout.dialog_poi_details, null);
@@ -212,8 +233,21 @@ public class FragmentoMapa extends Fragment {
         TextView tvPoiName = dialogView.findViewById(R.id.tv_poi_name);
         TextView tvPoiCity = dialogView.findViewById(R.id.tv_poi_city);
 
-        tvPoiName.setText(poi.getName() != null ? poi.getName() : "Establecimiento sin nombre");
-        tvPoiCity.setText(poi.getCity() != null ? poi.getCity() : "Ciudad desconocida");
+        if (tvPoiName != null) {
+            String poiName = poi.getName();
+            if (poiName == null || poiName.isEmpty()) {
+                poiName = poi.getType() != null ? poi.getType() : "Establecimiento sin nombre";
+            }
+            tvPoiName.setText(poiName);
+        } else {
+            Log.e(TAG, "TextView for POI name is null");
+        }
+
+        if (tvPoiCity != null) {
+            tvPoiCity.setText(poi.getCity() != null ? poi.getCity() : "Ciudad desconocida");
+        } else {
+            Log.e(TAG, "TextView for POI city is null");
+        }
 
         builder.setView(dialogView)
                 .setTitle("Detalles del Punto de Interés")
