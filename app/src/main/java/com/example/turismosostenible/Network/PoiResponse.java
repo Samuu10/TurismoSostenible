@@ -3,13 +3,13 @@ package com.example.turismosostenible.Network;
 import java.util.List;
 
 public class PoiResponse {
-    private List<PointOfInterest> pois;
+    private List<PuntoInteres> pois;
 
-    public List<PointOfInterest> getPois() {
+    public List<PuntoInteres> getPois() {
         return pois;
     }
 
-    public void setPois(List<PointOfInterest> pois) {
+    public void setPois(List<PuntoInteres> pois) {
         this.pois = pois;
     }
 }
